@@ -56,16 +56,21 @@ Then open the served URL, paste your Client ID into the field, click
 
 - The header countdown works the same way as the original: time until your
   next event, or time left in the one happening now.
-- Below it, a list of events over the next couple of days from your
-  primary calendar.
+- A calendar picker lists every calendar in your account, with **All**/
+  **None** shortcuts; it defaults to whatever's checked in your Google
+  Calendar UI. Selections are remembered per-browser.
+- Below it, a list of events over the next couple of days across your
+  selected calendars.
 - Events refresh automatically every 5 minutes while the tab is open, or
   on demand via **Refresh**.
 - **Disconnect** revokes the token and clears the connection.
 
 ## Known limitations
 
-- Reads your **primary** calendar only (no calendar picker).
 - Read-only — you can't add/edit/delete events from this page.
-- The OAuth access token isn't persisted across page reloads for security;
-  reopening the page re-requests one (silently, if you're still signed in
-  to Google in that browser and previously granted access).
+- The OAuth access token isn't persisted across page reloads. Sign-in
+  never happens silently — reopening the page always shows the connect
+  screen, and you reconnect with an explicit click (**Connect** or
+  **Reconnect**), so the app never pops a surprise Google prompt.
+- Once a token expires mid-session, calls fail until you click
+  **Reconnect** — it isn't renewed automatically.
