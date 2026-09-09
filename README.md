@@ -22,3 +22,9 @@ Open `index.html` in a browser. That's it.
 - Single weekly recurrence only — no one-off dates or holidays
 - No overlap detection between blocks on the same day
 - Schedule is stored per-browser (`localStorage`); export/import is the way to move it elsewhere
+
+## Google Calendar variant
+
+[`google-calendar/`](google-calendar/) has a separate version of this app
+that replaces the manual schedule with a live view of a real Google
+Calendar. It doesn't touch this version — see its own README for setup.

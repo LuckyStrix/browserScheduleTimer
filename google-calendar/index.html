@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Browser Schedule Timer — Google Calendar</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="status">
+    <div id="statusText" class="status-text">Loading…</div>
+    <div id="syncInfo" class="sync-info"></div>
+  </header>
+
+  <main>
+    <section class="connect-panel" id="connectPanel">
+      <p class="hint">Connect a Google Calendar to drive the countdown above from your real events.</p>
+
+      <div class="client-id-row">
+        <input type="text" id="clientIdInput" placeholder="Google OAuth Client ID (ends in .apps.googleusercontent.com)">
+        <button type="button" id="saveClientIdBtn">Save</button>
+      </div>
+
+      <button type="button" id="connectBtn" disabled>Connect Google Calendar</button>
+      <p class="hint small">Don't have a Client ID yet? See the setup steps in <code>google-calendar/README.md</code>.</p>
+    </section>
+
+    <section class="calendar-panel hidden" id="calendarPanel">
+      <div class="panel-header">
+        <span id="accountStatus">Connected</span>
+        <div class="panel-actions">
+          <button type="button" id="refreshBtn">Refresh</button>
+          <button type="button" id="disconnectBtn">Disconnect</button>
+        </div>
+      </div>
+      <ul class="event-list" id="eventList"></ul>
+    </section>
+  </main>
+
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="script.js"></script>
+</body>
+</html>
