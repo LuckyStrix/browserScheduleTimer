@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Browser Schedule Timer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="status">
+    <div id="statusText" class="status-text">Loading…</div>
+  </header>
+
+  <main>
+    <nav class="day-tabs" id="dayTabs"></nav>
+
+    <section class="editor">
+      <ul class="block-list" id="blockList"></ul>
+
+      <form class="add-form" id="addForm">
+        <input type="time" id="startInput" required>
+        <span class="sep">–</span>
+        <input type="time" id="endInput" required>
+        <input type="text" id="labelInput" placeholder="Event name" required>
+        <button type="submit">Add</button>
+      </form>
+
+      <div class="io-actions">
+        <button type="button" id="exportBtn">Export schedule</button>
+        <button type="button" id="importBtn">Import schedule</button>
+        <input type="file" id="importFile" accept="application/json" hidden>
+      </div>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
