@@ -1,7 +1,7 @@
 const CLIENT_ID_KEY = "gcal_client_id";
 const WAS_CONNECTED_KEY = "gcal_connected";
+const SELECTED_CALENDARS_KEY = "gcal_selected_calendars";
 const SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
-const CALENDAR_ID = "primary";
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // re-fetch the event list every 5 minutes
 const LOOKAHEAD_DAYS = 14; // how far ahead to fetch, so "soonest" can find something
 
@@ -16,6 +16,9 @@ const accountStatus = document.getElementById("accountStatus");
 const refreshBtn = document.getElementById("refreshBtn");
 const disconnectBtn = document.getElementById("disconnectBtn");
 const eventList = document.getElementById("eventList");
+const calendarPicker = document.getElementById("calendarPicker");
+const selectAllBtn = document.getElementById("selectAllBtn");
+const selectNoneBtn = document.getElementById("selectNoneBtn");
 
 let tokenClient = null;
 let accessToken = null;
@@ -23,6 +26,8 @@ let tokenExpiresAt = 0;
 let events = []; // cached, sorted by start; refetched on an interval
 let refreshTimer = null;
 let lastSyncedAt = null;
+let calendarList = []; // [{id, summary, color, primary}] from the user's calendarList
+let selectedCalendarIds = new Set();
 
 function loadClientId() {
   return localStorage.getItem(CLIENT_ID_KEY) || "";
@@ -30,6 +35,19 @@ function loadClientId() {
 
 function looksLikeClientId(value) {
   return /\.apps\.googleusercontent\.com$/.test(value.trim());
+}
+
+function loadSelectedCalendars() {
+  try {
+    const raw = localStorage.getItem(SELECTED_CALENDARS_KEY);
+    return raw ? new Set(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSelectedCalendars() {
+  localStorage.setItem(SELECTED_CALENDARS_KEY, JSON.stringify([...selectedCalendarIds]));
 }
 
 function formatDuration(ms) {
@@ -79,7 +97,7 @@ function onToken(response) {
   localStorage.setItem(WAS_CONNECTED_KEY, "1");
   accountStatus.textContent = "Connected to Google Calendar";
   showCalendarPanel();
-  fetchEvents();
+  fetchCalendarList().then(fetchEvents);
   startAutoRefresh();
 }
 
@@ -139,9 +157,93 @@ saveClientIdBtn.addEventListener("click", () => {
 
 refreshBtn.addEventListener("click", () => fetchEvents());
 
-// --- Fetching & rendering ---
+selectAllBtn.addEventListener("click", () => {
+  selectedCalendarIds = new Set(calendarList.map((c) => c.id));
+  saveSelectedCalendars();
+  renderCalendarPicker();
+  fetchEvents();
+});
+
+selectNoneBtn.addEventListener("click", () => {
+  selectedCalendarIds = new Set();
+  saveSelectedCalendars();
+  renderCalendarPicker();
+  fetchEvents();
+});
+
+// --- Calendar list & picker ---
+
+async function fetchCalendarList() {
+  try {
+    const token = await ensureFreshToken(false);
+    const res = await fetch("https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=250", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`calendarList returned ${res.status}`);
+    const data = await res.json();
+
+    calendarList = (data.items || []).map((item) => ({
+      id: item.id,
+      summary: item.summary || item.id,
+      color: item.backgroundColor || "#5b8cff",
+      primary: !!item.primary,
+    }));
+
+    const saved = loadSelectedCalendars();
+    if (saved) {
+      // Drop any saved ids for calendars that no longer exist/are shared with this account.
+      selectedCalendarIds = new Set([...saved].filter((id) => calendarList.some((c) => c.id === id)));
+    } else {
+      // First run: default to whatever's checked in the user's own Google Calendar UI.
+      selectedCalendarIds = new Set((data.items || []).filter((i) => i.selected !== false).map((i) => i.id));
+      saveSelectedCalendars();
+    }
+
+    renderCalendarPicker();
+  } catch (err) {
+    console.error(err);
+    setSyncInfo("Couldn't load your calendar list.");
+  }
+}
+
+function renderCalendarPicker() {
+  calendarPicker.innerHTML = "";
+  for (const cal of calendarList) {
+    const label = document.createElement("label");
+    label.className = "calendar-option";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = selectedCalendarIds.has(cal.id);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selectedCalendarIds.add(cal.id);
+      else selectedCalendarIds.delete(cal.id);
+      saveSelectedCalendars();
+      fetchEvents();
+    });
+
+    const swatch = document.createElement("span");
+    swatch.className = "calendar-swatch";
+    swatch.style.background = cal.color;
+
+    const name = document.createElement("span");
+    name.textContent = cal.summary;
+
+    label.append(checkbox, swatch, name);
+    calendarPicker.appendChild(label);
+  }
+}
+
+// --- Fetching & rendering events ---
 
 async function fetchEvents() {
+  if (selectedCalendarIds.size === 0) {
+    events = [];
+    setSyncInfo("No calendars selected.");
+    renderEventList();
+    return;
+  }
+
   try {
     const token = await ensureFreshToken(false);
     const now = new Date();
@@ -150,21 +252,27 @@ async function fetchEvents() {
     const timeMax = new Date(now);
     timeMax.setDate(timeMax.getDate() + LOOKAHEAD_DAYS);
 
-    const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(CALENDAR_ID)}/events`);
-    url.searchParams.set("timeMin", timeMin.toISOString());
-    url.searchParams.set("timeMax", timeMax.toISOString());
-    url.searchParams.set("singleEvents", "true");
-    url.searchParams.set("orderBy", "startTime");
-    url.searchParams.set("maxResults", "100");
+    const perCalendar = await Promise.all(
+      [...selectedCalendarIds].map(async (calId) => {
+        const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events`);
+        url.searchParams.set("timeMin", timeMin.toISOString());
+        url.searchParams.set("timeMax", timeMax.toISOString());
+        url.searchParams.set("singleEvents", "true");
+        url.searchParams.set("orderBy", "startTime");
+        url.searchParams.set("maxResults", "100");
 
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) throw new Error(`Google Calendar API returned ${res.status}`);
-    const data = await res.json();
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) {
+          console.error(`Calendar ${calId} returned ${res.status}`);
+          return [];
+        }
+        const data = await res.json();
+        const calMeta = calendarList.find((c) => c.id === calId);
+        return (data.items || []).map((item) => toEvent(item, calMeta)).filter(Boolean);
+      })
+    );
 
-    events = (data.items || [])
-      .map(toEvent)
-      .filter(Boolean)
-      .sort((a, b) => a.start - b.start);
+    events = perCalendar.flat().sort((a, b) => a.start - b.start);
 
     lastSyncedAt = new Date();
     setSyncInfo("Last synced " + lastSyncedAt.toLocaleTimeString());
@@ -175,13 +283,20 @@ async function fetchEvents() {
   }
 }
 
-function toEvent(item) {
+function toEvent(item, calMeta) {
   if (!item.start) return null;
   const allDay = !item.start.dateTime;
   const start = new Date(allDay ? item.start.date : item.start.dateTime);
   const end = new Date(allDay ? item.end.date : item.end.dateTime);
   if (isNaN(start) || isNaN(end)) return null;
-  return { start, end, allDay, title: item.summary || "(untitled event)" };
+  return {
+    start,
+    end,
+    allDay,
+    title: item.summary || "(untitled event)",
+    calendarName: calMeta?.summary || "",
+    color: calMeta?.color || "#5b8cff",
+  };
 }
 
 function computeStatus(now) {
@@ -228,6 +343,11 @@ function renderEventList() {
     const active = !event.allDay && event.start <= now && now < event.end;
     li.classList.toggle("active", active);
 
+    const dot = document.createElement("span");
+    dot.className = "cal-dot";
+    dot.style.background = event.color;
+    dot.title = event.calendarName;
+
     const dayBadge = document.createElement("span");
     dayBadge.className = "day-badge";
     dayBadge.textContent = event.start.toLocaleDateString(undefined, { weekday: "short" });
@@ -242,7 +362,7 @@ function renderEventList() {
     title.className = "title";
     title.textContent = event.title;
 
-    li.append(dayBadge, time, title);
+    li.append(dot, dayBadge, time, title);
     eventList.appendChild(li);
   }
 }

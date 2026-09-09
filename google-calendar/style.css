@@ -138,6 +138,67 @@ button:disabled {
   border-color: var(--accent);
 }
 
+.picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.picker-label {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.picker-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.picker-actions button {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  background: none;
+  color: var(--text-dim);
+}
+
+.picker-actions button:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.calendar-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.calendar-option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.calendar-option input {
+  margin: 0;
+}
+
+.calendar-swatch {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
 .event-list {
   list-style: none;
   margin: 0;
@@ -167,6 +228,13 @@ button:disabled {
   color: var(--text-dim);
   font-size: 0.85rem;
   white-space: nowrap;
+}
+
+.event-list .cal-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  flex: 0 0 auto;
 }
 
 .event-list .title {
