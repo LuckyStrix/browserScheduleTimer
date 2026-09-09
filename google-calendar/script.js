@@ -1,5 +1,4 @@
 const CLIENT_ID_KEY = "gcal_client_id";
-const WAS_CONNECTED_KEY = "gcal_connected";
 const SELECTED_CALENDARS_KEY = "gcal_selected_calendars";
 const SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // re-fetch the event list every 5 minutes
@@ -14,6 +13,7 @@ const saveClientIdBtn = document.getElementById("saveClientIdBtn");
 const connectBtn = document.getElementById("connectBtn");
 const accountStatus = document.getElementById("accountStatus");
 const refreshBtn = document.getElementById("refreshBtn");
+const reconnectBtn = document.getElementById("reconnectBtn");
 const disconnectBtn = document.getElementById("disconnectBtn");
 const eventList = document.getElementById("eventList");
 const calendarPicker = document.getElementById("calendarPicker");
@@ -94,32 +94,24 @@ function onToken(response) {
   }
   accessToken = response.access_token;
   tokenExpiresAt = Date.now() + (Number(response.expires_in) || 3600) * 1000;
-  localStorage.setItem(WAS_CONNECTED_KEY, "1");
   accountStatus.textContent = "Connected to Google Calendar";
   showCalendarPanel();
   fetchCalendarList().then(fetchEvents);
   startAutoRefresh();
 }
 
-function ensureFreshToken(promptIfNeeded) {
-  return new Promise((resolve, reject) => {
-    if (accessToken && Date.now() < tokenExpiresAt - 30000) {
-      resolve(accessToken);
-      return;
-    }
-    if (!tokenClient) {
-      reject(new Error("Not connected"));
-      return;
-    }
-    const originalCallback = tokenClient.callback;
-    tokenClient.callback = (response) => {
-      tokenClient.callback = originalCallback;
-      onToken(response);
-      if (response.error) reject(new Error(response.error));
-      else resolve(response.access_token);
-    };
-    tokenClient.requestAccessToken({ prompt: promptIfNeeded ? "consent" : "" });
-  });
+// Never renews automatically: once the token expires, calls just fail until
+// the user clicks Reconnect. Calendars rarely change, so stale data is fine
+// in the meantime and it beats a surprise sign-in popup mid-session.
+function ensureFreshToken() {
+  if (!accessToken || Date.now() >= tokenExpiresAt) {
+    return Promise.reject(new Error("Sign-in expired"));
+  }
+  return Promise.resolve(accessToken);
+}
+
+function isAuthError(err) {
+  return err instanceof Error && err.message === "Sign-in expired";
 }
 
 connectBtn.addEventListener("click", () => {
@@ -127,6 +119,13 @@ connectBtn.addEventListener("click", () => {
   if (!clientId) return;
   if (!tokenClient) initTokenClient(clientId);
   tokenClient.requestAccessToken({ prompt: "consent" });
+});
+
+reconnectBtn.addEventListener("click", () => {
+  const clientId = loadClientId();
+  if (!clientId) return;
+  if (!tokenClient) initTokenClient(clientId);
+  tokenClient.requestAccessToken({ prompt: "" });
 });
 
 disconnectBtn.addEventListener("click", () => {
@@ -137,7 +136,6 @@ disconnectBtn.addEventListener("click", () => {
   accessToken = null;
   tokenExpiresAt = 0;
   events = [];
-  localStorage.removeItem(WAS_CONNECTED_KEY);
   setSyncInfo("");
   statusText.textContent = "Not connected";
   document.title = "Browser Schedule Timer";
@@ -175,10 +173,11 @@ selectNoneBtn.addEventListener("click", () => {
 
 async function fetchCalendarList() {
   try {
-    const token = await ensureFreshToken(false);
+    const token = await ensureFreshToken();
     const res = await fetch("https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=250", {
       headers: { Authorization: `Bearer ${token}` },
     });
+    if (res.status === 401) throw new Error("Sign-in expired");
     if (!res.ok) throw new Error(`calendarList returned ${res.status}`);
     const data = await res.json();
 
@@ -202,7 +201,7 @@ async function fetchCalendarList() {
     renderCalendarPicker();
   } catch (err) {
     console.error(err);
-    setSyncInfo("Couldn't load your calendar list.");
+    setSyncInfo(isAuthError(err) ? "Signed out — click Reconnect to load your calendars." : "Couldn't load your calendar list.");
   }
 }
 
@@ -245,7 +244,7 @@ async function fetchEvents() {
   }
 
   try {
-    const token = await ensureFreshToken(false);
+    const token = await ensureFreshToken();
     const now = new Date();
     const timeMin = new Date(now);
     timeMin.setDate(timeMin.getDate() - 1); // include yesterday for overnight-spanning events
@@ -262,6 +261,7 @@ async function fetchEvents() {
         url.searchParams.set("maxResults", "100");
 
         const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.status === 401) throw new Error("Sign-in expired");
         if (!res.ok) {
           console.error(`Calendar ${calId} returned ${res.status}`);
           return [];
@@ -279,7 +279,11 @@ async function fetchEvents() {
     renderEventList();
   } catch (err) {
     console.error(err);
-    setSyncInfo("Couldn't reach Google Calendar — showing last known events.");
+    setSyncInfo(
+      isAuthError(err)
+        ? "Signed out of Google — click Reconnect to resume syncing (showing last known events)."
+        : "Couldn't reach Google Calendar — showing last known events."
+    );
   }
 }
 
@@ -384,18 +388,9 @@ function stopAutoRefresh() {
   clientIdInput.value = clientId;
   connectBtn.disabled = !clientId;
 
-  const wasConnected = localStorage.getItem(WAS_CONNECTED_KEY) === "1";
-  if (clientId && wasConnected) {
-    // Google Identity Services loads asynchronously; wait for it before attempting silent sign-in.
-    const waitForGoogle = setInterval(() => {
-      if (!window.google?.accounts?.oauth2) return;
-      clearInterval(waitForGoogle);
-      initTokenClient(clientId);
-      tokenClient.requestAccessToken({ prompt: "" });
-    }, 100);
-  } else {
-    showConnectPanel();
-  }
+  // No silent sign-in on load: token requests only ever happen from an explicit
+  // click (Connect/Reconnect), so the app never pops a surprise Google prompt.
+  showConnectPanel();
 
   statusText.textContent = "Not connected";
   tick();
