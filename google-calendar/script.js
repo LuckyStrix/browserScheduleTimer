@@ -1,4 +1,5 @@
 const CLIENT_ID_KEY = "gcal_client_id";
+const SERVER_CONFIG_URL = "config.json";
 const SELECTED_CALENDARS_KEY = "gcal_selected_calendars";
 const SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // re-fetch the event list every 5 minutes
@@ -21,6 +22,7 @@ const selectAllBtn = document.getElementById("selectAllBtn");
 const selectNoneBtn = document.getElementById("selectNoneBtn");
 
 let tokenClient = null;
+let serverClientId = ""; // shared Client ID loaded from config.json, if present
 let accessToken = null;
 let tokenExpiresAt = 0;
 let events = []; // cached, sorted by start; refetched on an interval
@@ -31,7 +33,26 @@ let selectedCalendarIds = new Set();
 let tokenExpired = false; // true when access token has expired and we need user action
 
 function loadClientId() {
-  return localStorage.getItem(CLIENT_ID_KEY) || "";
+  // A Client ID saved on this device (via the input below) overrides the
+  // shared server one; otherwise fall back to whatever config.json provided.
+  return localStorage.getItem(CLIENT_ID_KEY) || serverClientId || "";
+}
+
+// Reads the Client ID from config.json, served alongside this page, so every
+// device hitting this server (e.g. over Tailscale) shares the same Client ID
+// without pasting it in per-device. The file is gitignored — see
+// config.example.json and the README. Missing/invalid file just means no
+// shared config; the manual input below still works.
+async function loadServerClientId() {
+  try {
+    const res = await fetch(SERVER_CONFIG_URL, { cache: "no-store" });
+    if (!res.ok) return "";
+    const data = await res.json();
+    const value = (data.clientId || "").trim();
+    return looksLikeClientId(value) ? value : "";
+  } catch {
+    return "";
+  }
 }
 
 function looksLikeClientId(value) {
@@ -389,10 +410,15 @@ function stopAutoRefresh() {
 
 // --- Boot ---
 
-(function init() {
+(async function init() {
+  serverClientId = await loadServerClientId();
+
   const clientId = loadClientId();
   clientIdInput.value = clientId;
   connectBtn.disabled = !clientId;
+  if (serverClientId && !localStorage.getItem(CLIENT_ID_KEY)) {
+    setSyncInfo("Using shared Client ID from server config.");
+  }
 
   // No silent sign-in on load: token requests only ever happen from an explicit
   // click (Connect/Reconnect), so the app never pops a surprise Google prompt.

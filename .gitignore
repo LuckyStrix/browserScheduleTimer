@@ -1,0 +1,4 @@
+# Google Calendar variant: shared OAuth Client ID, served to every device on the
+# tailnet from this file instead of each device pasting its own. Never commit it —
+# see google-calendar/config.example.json and google-calendar/README.md.
+google-calendar/config.json

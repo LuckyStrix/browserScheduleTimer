@@ -39,6 +39,32 @@ The good news: this is a five-minute, free, one-time setup.
      Pages URL (`https://<you>.github.io`). No path, no trailing slash.
 5. Copy the generated Client ID (ends in `.apps.googleusercontent.com`).
 
+## Sharing one Client ID across devices (e.g. over Tailscale)
+
+If you serve this folder from one machine and open it from several devices
+(phone, laptop, etc. over Tailscale), you don't have to paste the Client ID
+into every device separately. Instead, drop it in a file next to this
+README:
+
+```bash
+cp config.example.json config.json
+# then edit config.json and paste your real Client ID in
+```
+
+`config.json` is gitignored (see the repo-root `.gitignore`) so it never
+gets pushed to GitHub — it lives only on the machine serving the app. Every
+device that loads the page over your tailnet fetches it automatically and
+the **Connect** button is enabled immediately, no manual paste needed. The
+manual input field still works and takes priority on any device where you
+type a value into it (saved to that device's `localStorage`), so you can
+still override it locally if you ever need to.
+
+Note this only shares the Client ID (not a secret — it's fine to have on
+disk on a machine only reachable over your tailnet). It does **not** share
+a signed-in session: each device still has to click **Connect** once and
+sign in with Google, since access tokens themselves are never persisted
+(see Known limitations below).
+
 ## Running it
 
 This page **must** be served over `http://` or `https://` — Google's
