@@ -28,6 +28,7 @@ let refreshTimer = null;
 let lastSyncedAt = null;
 let calendarList = []; // [{id, summary, color, primary}] from the user's calendarList
 let selectedCalendarIds = new Set();
+let tokenExpired = false; // true when access token has expired and we need user action
 
 function loadClientId() {
   return localStorage.getItem(CLIENT_ID_KEY) || "";
@@ -88,17 +89,18 @@ function initTokenClient(clientId) {
 }
 
 function onToken(response) {
-  if (response.error) {
-    setSyncInfo("Sign-in failed: " + response.error);
-    return;
-  }
-  accessToken = response.access_token;
-  tokenExpiresAt = Date.now() + (Number(response.expires_in) || 3600) * 1000;
-  accountStatus.textContent = "Connected to Google Calendar";
-  showCalendarPanel();
-  fetchCalendarList().then(fetchEvents);
-  startAutoRefresh();
-}
+   if (response.error) {
+     setSyncInfo("Sign-in failed: " + response.error);
+     return;
+   }
+   tokenExpired = false;
+   accessToken = response.access_token;
+   tokenExpiresAt = Date.now() + (Number(response.expires_in) || 3600) * 1000;
+   accountStatus.textContent = "Connected to Google Calendar";
+   showCalendarPanel();
+   fetchCalendarList().then(fetchEvents);
+   startAutoRefresh();
+ }
 
 // Never renews automatically: once the token expires, calls just fail until
 // the user clicks Reconnect. Calendars rarely change, so stale data is fine
@@ -129,18 +131,19 @@ reconnectBtn.addEventListener("click", () => {
 });
 
 disconnectBtn.addEventListener("click", () => {
-  stopAutoRefresh();
-  if (accessToken && window.google?.accounts?.oauth2?.revoke) {
-    google.accounts.oauth2.revoke(accessToken, () => {});
-  }
-  accessToken = null;
-  tokenExpiresAt = 0;
-  events = [];
-  setSyncInfo("");
-  statusText.textContent = "Not connected";
-  document.title = "Browser Schedule Timer";
-  showConnectPanel();
-});
+   stopAutoRefresh();
+   if (accessToken && window.google?.accounts?.oauth2?.revoke) {
+     google.accounts.oauth2.revoke(accessToken, () => {});
+   }
+   tokenExpired = false;
+   accessToken = null;
+   tokenExpiresAt = 0;
+   events = [];
+   setSyncInfo("");
+   statusText.textContent = "Not connected";
+   document.title = "Browser Schedule Timer";
+   showConnectPanel();
+ });
 
 saveClientIdBtn.addEventListener("click", () => {
   const value = clientIdInput.value.trim();
@@ -277,14 +280,17 @@ async function fetchEvents() {
     lastSyncedAt = new Date();
     setSyncInfo("Last synced " + lastSyncedAt.toLocaleTimeString());
     renderEventList();
-  } catch (err) {
-    console.error(err);
-    setSyncInfo(
-      isAuthError(err)
-        ? "Signed out of Google — click Reconnect to resume syncing (showing last known events)."
-        : "Couldn't reach Google Calendar — showing last known events."
-    );
-  }
+} catch (err) {
+     console.error(err);
+     if (isAuthError(err)) {
+       // Token expired: stop auto-refresh until user manually reconnects
+       tokenExpired = true;
+       stopAutoRefresh();
+       setSyncInfo("Google sign‑in expired — click Reconnect to resume syncing.");
+     } else {
+       setSyncInfo("Couldn't reach Google Calendar — showing last known events.");
+     }
+   }
 }
 
 function toEvent(item, calMeta) {
